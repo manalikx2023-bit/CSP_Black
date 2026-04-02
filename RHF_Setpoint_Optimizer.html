@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RHF Zone Setpoint Optimizer — Hazira</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1b2a; --navy: #1b3a5c; --teal: #0a7e8c; --amber: #f5a623;
+    --red: #c0392b; --green: #1e8449; --orange: #d35400; --purple: #7d3c98;
+    --white: #ffffff; --lgray: #7a8b9a; --lteal: #d6f0f2; --lbg: #f4f7fa;
+    --card: #ffffff; --border: #c5d5e5; --text: #1a1a2e; --muted: #5a6a7a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: var(--lbg); color: var(--text); }
+  
+  /* HEADER */
+  .header { background: var(--bg); color: white; padding: 18px 32px; border-bottom: 4px solid var(--amber); }
+  .header-top { display:flex; align-items:center; justify-content:space-between; }
+  .header h1 { font-size:22px; font-weight:700; color:white; letter-spacing:1px; }
+  .header .sub { font-size:13px; color: var(--lteal); margin-top:4px; }
+  .badge { background:var(--teal); color:white; padding:4px 12px; border-radius:20px; font-size:11px; font-weight:600; }
+
+  /* LAYOUT */
+  .main { max-width: 1400px; margin: 0 auto; padding: 20px 24px; }
+  .section-title { font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--teal); margin-bottom:12px; padding-bottom:6px; border-bottom:2px solid var(--lteal); }
+
+  /* TABS */
+  .tabs { display:flex; gap:4px; margin-bottom:20px; background:var(--card); border-radius:10px; padding:6px; box-shadow:0 2px 8px rgba(0,0,0,0.08); }
+  .tab { flex:1; padding:10px 16px; border:none; background:transparent; border-radius:7px; font-size:13px; font-weight:600; cursor:pointer; color:var(--muted); transition:all .2s; }
+  .tab.active { background:var(--bg); color:var(--amber); }
+
+  /* CARDS */
+  .card { background:var(--card); border-radius:12px; padding:20px; box-shadow:0 2px 12px rgba(0,0,0,0.08); margin-bottom:16px; }
+  .card-header { font-size:14px; font-weight:700; color:var(--navy); margin-bottom:14px; display:flex; align-items:center; gap:8px; }
+  .card-header .dot { width:10px; height:10px; border-radius:50%; }
+
+  /* GRID */
+  .grid-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; }
+  .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .grid-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+
+  /* STAT BOXES */
+  .stat-box { background:var(--card); border-radius:10px; padding:16px; text-align:center; box-shadow:0 2px 8px rgba(0,0,0,0.07); border-top:4px solid; }
+  .stat-box.teal { border-color:var(--teal); }
+  .stat-box.red { border-color:var(--red); }
+  .stat-box.green { border-color:var(--green); }
+  .stat-box.amber { border-color:var(--amber); }
+  .stat-box .val { font-size:28px; font-weight:800; }
+  .stat-box .lbl { font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); margin-top:4px; }
+  .stat-box.teal .val { color:var(--teal); }
+  .stat-box.red .val { color:var(--red); }
+  .stat-box.green .val { color:var(--green); }
+  .stat-box.amber .val { color:var(--amber); }
+
+  /* SCHEDULE SELECTOR */
+  .sched-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:16px; }
+  .sched-card { border:2px solid var(--border); border-radius:10px; padding:14px; cursor:pointer; transition:all .2s; background:white; }
+  .sched-card:hover { border-color:var(--teal); }
+  .sched-card.active { border-color:var(--teal); background: #e8f7f8; }
+  .sched-card .sn { font-size:11px; color:var(--teal); font-weight:700; text-transform:uppercase; }
+  .sched-card .sv { font-size:20px; font-weight:800; color:var(--navy); }
+  .sched-card .sm { font-size:11px; color:var(--muted); }
+
+  /* SLAB TABLE */
+  .slab-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .slab-table th { background:var(--navy); color:white; padding:8px 10px; text-align:center; font-weight:600; font-size:11px; }
+  .slab-table td { padding:7px 10px; text-align:center; border-bottom:1px solid #eef2f7; }
+  .slab-table tr:hover td { background:#f0f7ff; }
+  .recipe-hi { background:#fff0f0; color:var(--red); font-weight:700; }
+  .recipe-mid { background:#fff9e6; color:var(--orange); font-weight:600; }
+  .recipe-lo { background:#f0fff4; color:var(--green); }
+
+  /* MODEL CARDS */
+  .model-card { border-radius:12px; padding:18px; position:relative; overflow:hidden; }
+  .model-card.m1 { background:linear-gradient(135deg,#c0392b,#922b21); color:white; }
+  .model-card.m2 { background:linear-gradient(135deg,#1e8449,#145a32); color:white; }
+  .model-card.m3 { background:linear-gradient(135deg,#0a7e8c,#065a66); color:white; }
+  .model-card.current { background:linear-gradient(135deg,#1b3a5c,#0d1b2a); color:white; }
+  .model-card .model-label { font-size:10px; font-weight:700; letter-spacing:1px; opacity:0.8; text-transform:uppercase; }
+  .model-card .model-name { font-size:16px; font-weight:800; margin:4px 0; }
+  .model-card .model-sp { font-size:32px; font-weight:900; margin:8px 0; }
+  .model-card .model-detail { font-size:11px; opacity:0.85; line-height:1.5; }
+  .model-card .verdict { margin-top:10px; padding:6px 10px; border-radius:6px; font-size:11px; font-weight:700; background:rgba(255,255,255,0.15); }
+
+  /* ZONE VISUALIZATION */
+  .zone-strip { display:flex; align-items:stretch; gap:2px; height:70px; border-radius:10px; overflow:hidden; margin:12px 0; }
+  .zone-cell { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; font-weight:700; font-size:11px; color:white; transition: all .3s; position:relative; cursor:help; }
+  .zone-cell .zone-label { font-size:9px; opacity:0.85; margin-bottom:2px; }
+  .zone-cell .zone-temp { font-size:13px; font-weight:800; }
+  .zone-cell .zone-type { font-size:8px; opacity:0.75; margin-top:1px; }
+
+  /* COMPARISON TABLE */
+  .comp-table { width:100%; border-collapse:collapse; font-size:13px; }
+  .comp-table th { padding:10px 14px; text-align:center; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; }
+  .comp-table th.dim { text-align:left; background:var(--navy); color:white; }
+  .comp-table th.m1h { background:var(--red); color:white; }
+  .comp-table th.m2h { background:var(--green); color:white; }
+  .comp-table th.m3h { background:var(--teal); color:white; }
+  .comp-table th.cur { background:#1b3a5c; color:white; }
+  .comp-table td { padding:10px 14px; border-bottom:1px solid #eef2f7; text-align:center; }
+  .comp-table td.dim { text-align:left; font-weight:600; background:#f8fafc; }
+  .comp-table tr:hover td { background:#f0f7ff; }
+  .good { color:var(--green); font-weight:700; }
+  .bad { color:var(--red); font-weight:700; }
+  .warn { color:var(--orange); font-weight:700; }
+  .info { color:var(--teal); font-weight:700; }
+
+  /* INTERACTIVE CONTROLS */
+  .control-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+  .control-row label { font-size:12px; font-weight:600; color:var(--navy); min-width:100px; }
+  input[type=range] { flex:1; min-width:180px; accent-color:var(--teal); }
+  .range-val { font-size:14px; font-weight:800; color:var(--teal); min-width:60px; }
+  select { padding:6px 10px; border-radius:6px; border:1.5px solid var(--border); font-size:12px; background:white; color:var(--text); }
+
+  /* RESULT BOXES */
+  .result-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:14px 0; }
+  .result-box { border-radius:10px; padding:14px; text-align:center; border:2px solid; }
+  .result-box .rb-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px; }
+  .result-box .rb-val { font-size:24px; font-weight:900; }
+  .result-box .rb-sub { font-size:10px; margin-top:4px; }
+  .rb-current { border-color:#1b3a5c; }
+  .rb-current .rb-label { color:#1b3a5c; }
+  .rb-current .rb-val { color:#1b3a5c; }
+  .rb-m1 { border-color:var(--red); }
+  .rb-m1 .rb-label { color:var(--red); }
+  .rb-m1 .rb-val { color:var(--red); }
+  .rb-m2 { border-color:var(--green); }
+  .rb-m2 .rb-label { color:var(--green); }
+  .rb-m2 .rb-val { color:var(--green); }
+  .rb-m3 { border-color:var(--teal); }
+  .rb-m3 .rb-label { color:var(--teal); }
+  .rb-m3 .rb-val { color:var(--teal); }
+
+  /* LOGIC BOX */
+  .logic-box { background:#f8fafc; border-left:4px solid var(--teal); border-radius:0 8px 8px 0; padding:14px 16px; margin:10px 0; font-size:12px; line-height:1.7; color:var(--muted); }
+  .logic-box strong { color:var(--navy); }
+
+  /* RECOMMENDATION */
+  .rec-banner { border-radius:10px; padding:16px 20px; margin-top:14px; display:flex; align-items:center; gap:16px; }
+  .rec-banner.recommend-m1 { background:linear-gradient(90deg,#922b21,#c0392b); }
+  .rec-banner.recommend-m2 { background:linear-gradient(90deg,#145a32,#1e8449); }
+  .rec-banner.recommend-m3 { background:linear-gradient(90deg,#065a66,#0a7e8c); }
+  .rec-banner .rec-icon { font-size:32px; }
+  .rec-banner .rec-text { color:white; }
+  .rec-banner .rec-title { font-size:15px; font-weight:800; }
+  .rec-banner .rec-reason { font-size:11px; opacity:0.9; margin-top:3px; }
+
+  /* ZONE HEAT TABLE */
+  .zone-heat { display:grid; grid-template-columns:repeat(8,1fr); gap:4px; margin:10px 0; }
+  .zone-heat-cell { border-radius:6px; padding:10px 6px; text-align:center; color:white; }
+  .zone-heat-cell .zh-label { font-size:10px; font-weight:700; margin-bottom:4px; }
+  .zone-heat-cell .zh-val { font-size:14px; font-weight:900; }
+  .zone-heat-cell .zh-off { font-size:9px; margin-top:2px; opacity:0.85; }
+
+  /* TABS PANEL */
+  .tab-panel { display:none; }
+  .tab-panel.active { display:block; }
+
+  /* CHART CONTAINER */
+  .chart-wrap { position:relative; height:280px; }
+
+  /* INFO PILL */
+  .info-pill { display:inline-block; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+  .ip-green { background:#d5f5e3; color:var(--green); }
+  .ip-red { background:#fadbd8; color:var(--red); }
+  .ip-amber { background:#fef9e7; color:var(--orange); }
+  .ip-teal { background:var(--lteal); color:var(--teal); }
+
+  .note { font-size:11px; color:var(--muted); margin-top:8px; font-style:italic; }
+  .highlight-box { background:var(--bg); color:white; border-radius:10px; padding:14px 18px; margin-top:12px; }
+  .highlight-box .hb-title { font-size:12px; font-weight:700; color:var(--amber); margin-bottom:6px; }
+  .highlight-box .hb-body { font-size:11px; color:#a8bbcc; line-height:1.6; }
+
+  hr { border:none; border-top:1px solid #e8eef4; margin:16px 0; }
+
+  @media (max-width:900px) { .grid-3,.grid-4,.sched-grid,.result-grid { grid-template-columns:1fr 1fr; } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-top">
+    <div>
+      <h1>🔥 RHF Zone Setpoint Optimizer</h1>
+      <div class="sub">Hazira Plant · RHF #1 · Mixed-SKU Slab Processing · Nov 2025–Jan 2026 · 19,406 Slabs</div>
+    </div>
+    <span class="badge">LIVE PROTOTYPE</span>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- TABS -->
+  <div class="tabs" style="margin-top:16px;">
+    <button class="tab active" onclick="switchTab('schedules')">📋 Real Schedules</button>
+    <button class="tab" onclick="switchTab('simulator')">🎛️ Interactive Simulator</button>
+    <button class="tab" onclick="switchTab('models')">📐 Model Logic</button>
+    <button class="tab" onclick="switchTab('zones')">🌡️ Zone Profile</button>
+  </div>
+
+  <!-- ========== TAB 1: REAL SCHEDULES ========== -->
+  <div id="tab-schedules" class="tab-panel active">
+
+    <div class="card">
+      <div class="section-title">Select a Real Production Schedule</div>
+      <div class="sched-grid" id="sched-grid"></div>
+    </div>
+
+    <div id="sched-detail"></div>
+  </div>
+
+  <!-- ========== TAB 2: INTERACTIVE SIMULATOR ========== -->
+  <div id="tab-simulator" class="tab-panel">
+    <div class="card">
+      <div class="section-title">Custom Furnace Load Simulator</div>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:16px;">Adjust the grade mix below to see how each model computes setpoints in real time.</p>
+
+      <div id="sim-controls"></div>
+      <hr>
+
+      <div class="section-title" style="margin-top:4px;">Live Model Results</div>
+      <div class="result-grid" id="sim-results"></div>
+
+      <div class="section-title" style="margin-top:16px;">Zone Setpoint Profile (All Models)</div>
+      <div class="chart-wrap">
+        <canvas id="simZoneChart"></canvas>
+      </div>
+
+      <div id="sim-recommendation"></div>
+    </div>
+  </div>
+
+  <!-- ========== TAB 3: MODEL LOGIC ========== -->
+  <div id="tab-models" class="tab-panel">
+    <div class="grid-3">
+      <div class="card">
+        <div class="card-header"><span class="dot" style="background:var(--red)"></span>Model 1 — Maximum Setpoint</div>
+        <div style="background:#922b21;color:white;border-radius:8px;padding:12px;text-align:center;margin-bottom:14px;">
+          <div style="font-size:11px;opacity:.8;">Setpoint Formula</div>
+          <div style="font-size:18px;font-weight:800;margin:6px 0;">SP = max(Recipe₁, Recipe₂, ..., Recipeₙ)</div>
+        </div>
+        <div class="logic-box">
+          <strong>What it does:</strong> Sets ALL 8 zone temperatures based on the HIGHEST recipe temperature among all slabs currently in the furnace.<br><br>
+          <strong>Zone setpoints:</strong> Each zone = max_recipe + zone_offset<br>
+          (Z3 offset +77°C, Z4 +71°C, Z5–Z7 +15–18°C, Z1/Z8 +6–8°C)<br><br>
+          <strong>When correct:</strong> New grades being trialled, API/quality-critical campaigns, FCE dropout frequently below recipe, high spread (>20°C).
+        </div>
+        <div style="margin-top:10px;">
+          <div class="info-pill ip-green">✓ Zero underheating risk</div>
+          <div class="info-pill ip-green" style="margin-top:4px;">✓ Simple, robust</div>
+          <div class="info-pill ip-red" style="margin-top:4px;">✗ Higher fuel cost</div>
+          <div class="info-pill ip-red" style="margin-top:4px;">✗ Overheats low-T grades</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="dot" style="background:var(--green)"></span>Model 2 — Mass-Weighted Average</div>
+        <div style="background:#145a32;color:white;border-radius:8px;padding:12px;text-align:center;margin-bottom:14px;">
+          <div style="font-size:11px;opacity:.8;">Setpoint Formula</div>
+          <div style="font-size:18px;font-weight:800;margin:6px 0;">SP = Σ(Wᵢ × Rᵢ) / ΣWᵢ + buffer</div>
+          <div style="font-size:10px;opacity:.8;">W = slab mass, R = recipe temp</div>
+        </div>
+        <div class="logic-box">
+          <strong>What it does:</strong> Weights each slab's recipe temperature by its mass. Heavier slabs (more thermal inertia) influence the setpoint more.<br><br>
+          <strong>Buffer rule:</strong> +5°C safety margin added. If any slab recipe > wtavg+10°C, that grade gets a zone-specific override.<br><br>
+          <strong>When correct:</strong> Stable mixed production, known grade behaviour, spread 5–15°C, energy-saving campaigns.
+        </div>
+        <div style="margin-top:10px;">
+          <div class="info-pill ip-green">✓ ~0.9% fuel saving</div>
+          <div class="info-pill ip-green" style="margin-top:4px;">✓ Adaptive to mix</div>
+          <div class="info-pill ip-amber" style="margin-top:4px;">⚠ Moderate quality risk</div>
+          <div class="info-pill ip-red" style="margin-top:4px;">✗ Needs tighter control</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="dot" style="background:var(--teal)"></span>Model 3 — Residence-Time Weighted</div>
+        <div style="background:#065a66;color:white;border-radius:8px;padding:12px;text-align:center;margin-bottom:14px;">
+          <div style="font-size:11px;opacity:.8;">Setpoint Formula</div>
+          <div style="font-size:18px;font-weight:800;margin:6px 0;">SP = Σ(RTᵢ × Rᵢ) / ΣRTᵢ + buffer</div>
+          <div style="font-size:10px;opacity:.8;">RT = residence time, R = recipe temp</div>
+        </div>
+        <div class="logic-box">
+          <strong>What it does:</strong> Weights by how long each slab spends in the furnace. Slabs with longer residence time (colder start, heavier mass) need more heating → their recipe gets more weight.<br><br>
+          <strong>Why better for Hazira:</strong> Data shows ANTRG55 (low recipe, 1220°C) has avg RT=168 min vs ANGENR2 (high recipe, 1240°C) at 165 min — similar, so M2 ≈ M3 here. But in schedules where cold slabs stay longer, M3 is more physically accurate.<br><br>
+          <strong>When correct:</strong> Mixed cold-charging/hot-charging schedules, wide RT variance (>40 min spread).
+        </div>
+        <div style="margin-top:10px;">
+          <div class="info-pill ip-green">✓ Physically meaningful</div>
+          <div class="info-pill ip-teal">≈ Similar to M2 for Hazira</div>
+          <div class="info-pill ip-amber" style="margin-top:4px;">⚠ Needs RT data real-time</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- WHY Z8 < FCE explanation -->
+    <div class="card" style="border-left:5px solid var(--amber);">
+      <div class="card-header"><span style="color:var(--amber);font-size:18px;">⚠</span> Why Zone 8 Temperature Can Be Lower Than FCE Dropout — This Is Correct Physics</div>
+      <div class="grid-2">
+        <div>
+          <div class="logic-box">
+            <strong>The apparent paradox:</strong> Z8 (exit zone) actual mean = 1,237°C, FCE dropout mean = 1,238°C. Z8 appears cooler than what comes out.<br><br>
+            <strong>The explanation:</strong> The slab arrives at Z8 already heated to ~1,310–1,320°C from soaking zones Z3/Z4. By the time it exits through Z8, it is <em>releasing heat to the cooler atmosphere</em>, not gaining it. The FCE pyrometer reads the slab <em>surface</em> temperature just before discharge — which is the equilibrium between retained soaking-zone heat and Z8's equalising atmosphere.<br><br>
+            <strong>Z8 is an equalising zone, not a heating zone.</strong> Its purpose is to homogenise top-to-bottom temperature differences, not add bulk heat. The zone atmosphere can be slightly below slab temp for this to work.
+          </div>
+        </div>
+        <div>
+          <div style="margin-bottom:8px;font-size:12px;font-weight:700;color:var(--navy);">Actual Temperature Profile (Hazira Data)</div>
+          <div class="zone-heat" id="physics-heat-cells"></div>
+          <div class="note" style="margin-top:8px;">Z3/Z4 (soaking) operate at +70–77°C above recipe. Z8 (equalising) can be at or below FCE dropout. FCE dropout = slab surface temp at exit — driven by soaking zone heat, moderated by Z8.</div>
+          <div class="highlight-box" style="margin-top:10px;">
+            <div class="hb-title">CORRECT ZONE OFFSET MODEL (from actual data)</div>
+            <div class="hb-body">Z1: +6°C | Z2: +3°C | Z3: +77°C | Z4: +71°C | Z5: +18°C | Z6: +14°C | Z7: +17°C | Z8: +8°C<br>These offsets are applied relative to the setpoint temperature computed by each model.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== TAB 4: ZONE PROFILE ========== -->
+  <div id="tab-zones" class="tab-panel">
+    <div class="card">
+      <div class="section-title">Zone Temperature Profile — Select Schedule & Model</div>
+      <div class="control-row" style="margin-bottom:16px;">
+        <label>Schedule:</label>
+        <select id="zone-sched-sel" onchange="updateZoneProfile()">
+          <option value="0">Schedule 20260019 (16 grades)</option>
+          <option value="1">Schedule 20260015 (20 grades)</option>
+          <option value="2">Schedule 20260014 (18 grades)</option>
+          <option value="3">Schedule 20260018 (16 grades)</option>
+        </select>
+        <label style="margin-left:16px;">Overlay:</label>
+        <select id="zone-model-sel" onchange="updateZoneProfile()">
+          <option value="all">All Models</option>
+          <option value="m1">Model 1 Only</option>
+          <option value="m2">Model 2 Only</option>
+          <option value="m3">Model 3 Only</option>
+        </select>
+      </div>
+      <div class="chart-wrap" style="height:340px;">
+        <canvas id="zoneProfileChart"></canvas>
+      </div>
+      <div class="note" style="margin-top:8px;">
+        Zone 3 & 4 (soaking zones) operate 70–77°C above recipe. Zone 8 (equalising zone) is typically near or slightly below FCE dropout — this is physically correct. FCE dropout (slab surface temp at exit) is shown as horizontal reference line.
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-title">Zone-by-Zone Setpoint Table — All Models</div>
+      <div id="zone-table-container"></div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<script>
+// ─────────────────────────────────────────────
+// DATA (from real Hazira data analysis)
+// ─────────────────────────────────────────────
+const ZONE_OFFSETS = [5.9, 3.0, 77.4, 70.9, 17.6, 14.1, 16.7, 7.6]; // Z1–Z8 above recipe
+const ZONE_NAMES   = ['Z1\nPreheat','Z2\nPreheat','Z3\nSoak','Z4\nSoak','Z5\nHeat','Z6\nHeat','Z7\nHeat','Z8\nEqual.'];
+const ZONE_SHORT   = ['Z1','Z2','Z3','Z4','Z5','Z6','Z7','Z8'];
+const ZONE_TYPES   = ['Pre-heat','Pre-heat','Soaking','Soaking','Heating','Heating','Heating','Equalising'];
+const ZONE_COLORS  = ['#2980b9','#1a6ea8','#c0392b','#a93226','#e67e22','#d35400','#d35400','#0a7e8c'];
+
+const SCHEDULES = [
+  {
+    id: 20260019, slabs:109, grades:16,
+    recipe_min:1220.2, recipe_max:1240.2, recipe_mean:1230.5,
+    fce_actual:1243.2, fce_min:1215.7,
+    total_wt:2371, avg_rt:162,
+    gradeData:[
+      {grade:'ANTRG55', n:32, recipe:1220.5, wt:18.5, rt:168.4, fce:1233.1},
+      {grade:'ANTRG13', n:28, recipe:1221.2, wt:20.8, rt:151.0, fce:1246.6},
+      {grade:'ANGES51', n:16, recipe:1237.6, wt:26.1, rt:164.9, fce:1256.0},
+      {grade:'ANGEN51', n:5,  recipe:1230.2, wt:21.8, rt:180.4, fce:1247.3},
+      {grade:'ANTRM13', n:4,  recipe:1240.2, wt:26.0, rt:151.5, fce:1256.7},
+      {grade:'ANGENS6', n:4,  recipe:1230.2, wt:22.9, rt:142.8, fce:1235.4},
+      {grade:'ANGEN02', n:3,  recipe:1240.2, wt:25.6, rt:160.0, fce:1232.2},
+      {grade:'ANGENP6', n:3,  recipe:1230.2, wt:23.1, rt:147.3, fce:1224.9},
+      {grade:'Others',  n:14, recipe:1228.0, wt:21.0, rt:155.0, fce:1238.0},
+    ],
+    context:"High grade diversity (16 grades). Includes ANTRM13 and ANGEN02 at 1240.2°C as highest-recipe grades. 14% slabs below recipe.",
+    rightModel:'M1',
+    rightReason:"14% slabs are dropping below recipe. Quality risk is real. Diversity of 16 grades makes weighted average unreliable. Use M1 for zero underheating risk."
+  },
+  {
+    id: 20260015, slabs:90, grades:20,
+    recipe_min:1220.2, recipe_max:1240.2, recipe_mean:1226.1,
+    fce_actual:1245.1, fce_min:1226.2,
+    total_wt:1854, avg_rt:154,
+    gradeData:[
+      {grade:'ANTRG55', n:25, recipe:1220.2, wt:18.0, rt:143.0, fce:1234.3},
+      {grade:'ANDRW01', n:18, recipe:1220.2, wt:19.8, rt:156.9, fce:1246.6},
+      {grade:'ANIFS01', n:10, recipe:1220.2, wt:18.4, rt:167.3, fce:1263.2},
+      {grade:'ANGENP6', n:8,  recipe:1230.2, wt:23.1, rt:151.6, fce:1244.3},
+      {grade:'ANTRP15', n:5,  recipe:1240.2, wt:24.8, rt:168.0, fce:1250.1},
+      {grade:'ANTRW04', n:4,  recipe:1220.2, wt:19.0, rt:158.0, fce:1249.6},
+      {grade:'ANCRMA2', n:2,  recipe:1230.2, wt:22.7, rt:144.0, fce:1239.2},
+      {grade:'Others',  n:18, recipe:1224.0, wt:20.5, rt:155.0, fce:1242.0},
+    ],
+    context:"Highest grade diversity (20 grades). Most slabs at lowest recipe (1220.2°C). Only 5 slabs at 1240.2°C. Zero slabs below recipe — furnace over-firing.",
+    rightModel:'M2',
+    rightReason:"Zero underheating events. FCE is +19°C above mean recipe — over-firing by ~19°C on majority low-recipe slabs (ANTRG55, ANDRW01, ANIFS01). M2 (1226.1°C wtavg) reduces setpoint by 14.1°C vs M1, saving significant fuel."
+  },
+  {
+    id: 20260014, slabs:96, grades:18,
+    recipe_min:1220.2, recipe_max:1240.2, recipe_mean:1227.1,
+    fce_actual:1231.8, fce_min:1208.5,
+    total_wt:2016, avg_rt:183,
+    gradeData:[
+      {grade:'ANTRG55', n:30, recipe:1220.2, wt:18.0, rt:143.9, fce:1232.9},
+      {grade:'ANDRW01', n:18, recipe:1220.2, wt:20.7, rt:229.7, fce:1227.8},
+      {grade:'ANCRMA2', n:8,  recipe:1230.2, wt:22.7, rt:152.6, fce:1238.0},
+      {grade:'ANEDDM2', n:7,  recipe:1230.2, wt:21.1, rt:153.9, fce:1231.3},
+      {grade:'ANCRT09', n:6,  recipe:1230.2, wt:23.2, rt:200.2, fce:1237.7},
+      {grade:'ANCRMB2', n:4,  recipe:1230.2, wt:22.9, rt:155.2, fce:1232.0},
+      {grade:'ANGEN51', n:4,  recipe:1235.2, wt:21.6, rt:222.8, fce:1228.9},
+      {grade:'Others',  n:19, recipe:1228.0, wt:21.5, rt:175.0, fce:1230.0},
+    ],
+    context:"Longest avg residence time (183 min). ANDRW01 has exceptional RT of 229.7 min. 21% slabs below recipe — control instability. FCE only 4.7°C above mean recipe.",
+    rightModel:'M3',
+    rightReason:"21% slabs are dropping below recipe (worst of all schedules). Long residence times vary widely (144–230 min). ANDRW01 (RT=229.7 min) needs more heat. RT-weighted model accounts for this better than mass-weighted, as longer-RT slabs get proportionally more influence on setpoint."
+  },
+  {
+    id: 20260018, slabs:101, grades:16,
+    recipe_min:1220.2, recipe_max:1240.2, recipe_mean:1231.6,
+    fce_actual:1250.0, fce_min:1230.4,
+    total_wt:2306, avg_rt:155,
+    gradeData:[
+      {grade:'ANTRG55', n:31, recipe:1220.8, wt:18.2, rt:149.3, fce:1243.1},
+      {grade:'ANGENR2', n:15, recipe:1240.2, wt:26.5, rt:164.7, fce:1253.0},
+      {grade:'ANTRM13', n:15, recipe:1240.2, wt:26.9, rt:149.5, fce:1255.6},
+      {grade:'ANGENS6', n:10, recipe:1230.2, wt:22.9, rt:146.4, fce:1259.6},
+      {grade:'ANTRG13', n:6,  recipe:1220.2, wt:21.2, rt:148.7, fce:1247.8},
+      {grade:'ANTRNT1', n:5,  recipe:1230.2, wt:24.5, rt:168.6, fce:1251.4},
+      {grade:'ANCRMB2', n:3,  recipe:1230.2, wt:22.7, rt:151.7, fce:1241.6},
+      {grade:'Others',  n:16, recipe:1230.0, wt:22.0, rt:152.0, fce:1248.0},
+    ],
+    context:"Highest FCE dropout (1250°C avg). Large high-recipe blocks (ANGENR2+ANTRM13 = 30 slabs at 1240.2°C). Zero slabs below recipe. All FCE well above recipe.",
+    rightModel:'M2',
+    rightReason:"Zero underheating risk. FCE is +18.4°C above mean recipe — significant over-firing. ANGENR2/ANTRM13 are 30 heavy slabs at max recipe (1240.2°C), which already anchors the weighted average close to max. M2 (1231.6°C) gives ~8.6°C reduction vs M1, balanced by high-recipe grade weight."
+  }
+];
+
+// ─────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────
+function computeModels(grades) {
+  const totalWt  = grades.reduce((s,g)=> s + g.n*g.wt, 0);
+  const totalRT  = grades.reduce((s,g)=> s + g.n*g.rt, 0);
+  const recipeMax = Math.max(...grades.map(g=>g.recipe));
+  const recipeMin = Math.min(...grades.map(g=>g.recipe));
+  const m2raw = grades.reduce((s,g)=> s + g.n*g.wt*g.recipe, 0) / totalWt;
+  const m3raw = grades.reduce((s,g)=> s + g.n*g.rt*g.recipe, 0) / totalRT;
+  const spread = recipeMax - recipeMin;
+  const m2 = m2raw + 5; // +5°C buffer
+  const m3 = m3raw + 5;
+  return { recipeMax, recipeMin, spread, m2raw, m3raw, m2, m3, m1: recipeMax };
+}
+
+function zoneSetpoints(sp) {
+  return ZONE_OFFSETS.map(off => sp + off);
+}
+
+function getRecipeColor(r) {
+  if(r >= 1240) return 'recipe-hi';
+  if(r >= 1230) return 'recipe-mid';
+  return 'recipe-lo';
+}
+
+function fmtT(v) { return v.toFixed(1)+'°C'; }
+
+// ─────────────────────────────────────────────
+// TAB SWITCHING
+// ─────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i) => {
+    const names = ['schedules','simulator','models','zones'];
+    t.classList.toggle('active', names[i] === name);
+  });
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  if(name==='zones') updateZoneProfile();
+  if(name==='models') renderPhysicsHeat();
+}
+
+// ─────────────────────────────────────────────
+// SCHEDULE TAB
+// ─────────────────────────────────────────────
+let activeSchedIdx = 0;
+
+function renderScheduleGrid() {
+  const el = document.getElementById('sched-grid');
+  el.innerHTML = SCHEDULES.map((s,i) => `
+    <div class="sched-card ${i===activeSchedIdx?'active':''}" onclick="selectSchedule(${i})">
+      <div class="sn">Schedule ${s.id}</div>
+      <div class="sv">${s.slabs}</div>
+      <div class="sm">slabs &middot; ${s.grades} grades</div>
+      <div style="margin-top:8px;font-size:11px;color:var(--muted);">Spread: ${(s.recipe_max-s.recipe_min).toFixed(0)}°C &middot; FCE: ${fmtT(s.fce_actual)}</div>
+      <div class="info-pill ip-${s.rightModel==='M1'?'red':s.rightModel==='M2'?'green':'teal'}" style="margin-top:6px;">Recommend: ${s.rightModel}</div>
+    </div>`).join('');
+}
+
+function selectSchedule(idx) {
+  activeSchedIdx = idx;
+  renderScheduleGrid();
+  renderSchedDetail();
+}
+
+function renderSchedDetail() {
+  const s = SCHEDULES[activeSchedIdx];
+  const m = computeModels(s.gradeData);
+  const currentActual = s.fce_actual - 8; // approx actual zone setpoint (FCE - furnace margin)
+
+  const det = document.getElementById('sched-detail');
+  det.innerHTML = `
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header"><span class="dot" style="background:var(--navy)"></span>Schedule ${s.id} — Grade Mix</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">${s.context}</div>
+        <table class="slab-table">
+          <thead><tr>
+            <th>Grade</th><th>Slabs</th><th>Recipe (°C)</th><th>Avg Wt (t)</th><th>Avg RT (min)</th><th>Actual FCE</th>
+          </tr></thead>
+          <tbody>
+          ${s.gradeData.map(g=>`
+            <tr>
+              <td style="font-weight:700;text-align:left;">${g.grade}</td>
+              <td>${g.n}</td>
+              <td class="${getRecipeColor(g.recipe)}">${g.recipe.toFixed(1)}</td>
+              <td>${g.wt.toFixed(1)}</td>
+              <td>${g.rt.toFixed(0)}</td>
+              <td style="color:${g.fce<g.recipe?'var(--red)':'var(--green)'};font-weight:600;">${g.fce.toFixed(1)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        <div class="note" style="margin-top:8px;">Red recipe = high temp grade. FCE in red = slab below recipe target (quality risk).</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="dot" style="background:var(--amber)"></span>Model Comparison — ${s.slabs} Slabs</div>
+
+        <div class="result-grid" style="grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+          <div class="result-box rb-current">
+            <div class="rb-label">Current Actual</div>
+            <div class="rb-val">${fmtT(s.fce_actual)}</div>
+            <div class="rb-sub" style="color:var(--muted);">Avg FCE dropout</div>
+          </div>
+          <div class="result-box rb-m1">
+            <div class="rb-label">M1 Max Setpoint</div>
+            <div class="rb-val">${fmtT(m.m1)}</div>
+            <div class="rb-sub" style="color:var(--red);">Spread: ${m.spread.toFixed(0)}°C</div>
+          </div>
+          <div class="result-box rb-m2">
+            <div class="rb-label">M2 Wtd Avg +5°C</div>
+            <div class="rb-val">${fmtT(m.m2)}</div>
+            <div class="rb-sub" style="color:var(--green);">Raw: ${m.m2raw.toFixed(1)}°C</div>
+          </div>
+          <div class="result-box rb-m3">
+            <div class="rb-label">M3 RT-Wtd +5°C</div>
+            <div class="rb-val">${fmtT(m.m3)}</div>
+            <div class="rb-sub" style="color:var(--teal);">Raw: ${m.m3raw.toFixed(1)}°C</div>
+          </div>
+        </div>
+
+        <div class="section-title">Zone Setpoints by Model</div>
+        <canvas id="schedZoneChart" height="180"></canvas>
+
+        <div class="rec-banner recommend-${s.rightModel==='M1'?'m1':s.rightModel==='M2'?'m2':'m3'}" style="margin-top:14px;">
+          <div class="rec-icon">${s.rightModel==='M1'?'🛡️':s.rightModel==='M2'?'⚡':'⏱️'}</div>
+          <div class="rec-text">
+            <div class="rec-title">Recommended: ${s.rightModel} — ${s.rightModel==='M1'?'Maximum Setpoint':s.rightModel==='M2'?'Weighted Average':'Residence-Time Weighted'}</div>
+            <div class="rec-reason">${s.rightReason}</div>
+          </div>
+        </div>
+
+        <div class="section-title" style="margin-top:16px;">Comparison Table</div>
+        <table class="comp-table">
+          <thead><tr>
+            <th class="dim">Metric</th>
+            <th class="cur">Current</th>
+            <th class="m1h">M1 Max</th>
+            <th class="m2h">M2 Wtavg</th>
+            <th class="m3h">M3 RT-Wtd</th>
+          </tr></thead>
+          <tbody>
+            <tr>
+              <td class="dim">Setpoint (°C)</td>
+              <td class="info">${fmtT(s.fce_actual-8)}</td>
+              <td class="bad">${fmtT(m.m1)}</td>
+              <td class="good">${fmtT(m.m2)}</td>
+              <td class="info">${fmtT(m.m3)}</td>
+            </tr>
+            <tr>
+              <td class="dim">vs Max Recipe</td>
+              <td>${fmtT(s.fce_actual-8-m.m1)}</td>
+              <td class="bad">Baseline</td>
+              <td class="good">${fmtT(m.m2-m.m1)}</td>
+              <td class="info">${fmtT(m.m3-m.m1)}</td>
+            </tr>
+            <tr>
+              <td class="dim">Underheating Risk</td>
+              <td>—</td>
+              <td class="good">None</td>
+              <td class="${m.spread>15?'warn':'good'}">${m.spread>15?'Moderate':'Low'}</td>
+              <td class="${m.spread>15?'warn':'good'}">${m.spread>15?'Moderate':'Low'}</td>
+            </tr>
+            <tr>
+              <td class="dim">Est. Fuel Saving</td>
+              <td>—</td>
+              <td>Baseline</td>
+              <td class="good">~${Math.round((m.m1-m.m2)*53.4)} NM3/HR</td>
+              <td class="good">~${Math.round((m.m1-m.m3)*53.4)} NM3/HR</td>
+            </tr>
+            <tr>
+              <td class="dim">Over-firing Risk</td>
+              <td class="${s.fce_actual-s.recipe_mean>12?'bad':'warn'}">+${(s.fce_actual-s.recipe_mean).toFixed(1)}°C</td>
+              <td class="bad">High</td>
+              <td class="good">Low</td>
+              <td class="good">Low</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+
+  // Render zone chart
+  setTimeout(() => {
+    const ctx = document.getElementById('schedZoneChart');
+    if(!ctx) return;
+    if(ctx._chartRef) ctx._chartRef.destroy();
+    const m1sp = zoneSetpoints(m.m1);
+    const m2sp = zoneSetpoints(m.m2);
+    const m3sp = zoneSetpoints(m.m3);
+    ctx._chartRef = new Chart(ctx, {
+      type:'line',
+      data:{
+        labels: ZONE_SHORT,
+        datasets:[
+          {label:'M1 Max',data:m1sp,borderColor:'#c0392b',backgroundColor:'rgba(192,57,43,0.08)',borderWidth:2.5,pointRadius:4,tension:.3},
+          {label:'M2 WtAvg',data:m2sp,borderColor:'#1e8449',backgroundColor:'rgba(30,132,73,0.08)',borderWidth:2.5,pointRadius:4,tension:.3},
+          {label:'M3 RT-Wtd',data:m3sp,borderColor:'#0a7e8c',backgroundColor:'rgba(10,126,140,0.08)',borderWidth:2,pointRadius:4,tension:.3,borderDash:[5,3]},
+          {label:'Actual FCE',data:Array(8).fill(s.fce_actual),borderColor:'#f5a623',borderWidth:2,borderDash:[8,4],pointRadius:0},
+          {label:'Max Recipe',data:Array(8).fill(m.m1),borderColor:'rgba(192,57,43,0.4)',borderWidth:1,borderDash:[3,3],pointRadius:0},
+        ]
+      },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{position:'top',labels:{font:{size:11}}}},
+        scales:{
+          y:{min:1200,max:1400,title:{display:true,text:'Temperature (°C)',font:{size:11}}},
+          x:{title:{display:true,text:'Furnace Zone (Entry → Exit)',font:{size:11}}}
+        }
+      }
+    });
+  }, 50);
+}
+
+// ─────────────────────────────────────────────
+// SIMULATOR TAB
+// ─────────────────────────────────────────────
+const SIM_GRADES = [
+  {key:'ANTRG55', label:'ANTRG55 (Low-T)', recipe:1220, defN:30, wt:18.5, rt:160},
+  {key:'ANCRMB6', label:'ANCRMB6', recipe:1225, defN:20, wt:22.0, rt:155},
+  {key:'ANGENP6', label:'ANGENP6', recipe:1232, defN:15, wt:22.5, rt:150},
+  {key:'ANGEN02', label:'ANGEN02', recipe:1237, defN:10, wt:21.8, rt:158},
+  {key:'ANGENR2', label:'ANGENR2 (High-T)', recipe:1240, defN:5, wt:24.2, rt:162},
+];
+
+let simZoneChart = null;
+
+function renderSimControls() {
+  const el = document.getElementById('sim-controls');
+  el.innerHTML = SIM_GRADES.map((g,i) => `
+    <div class="control-row">
+      <label style="color:${g.recipe>=1240?'var(--red)':g.recipe>=1232?'var(--orange)':'var(--green)'};">${g.label}</label>
+      <span style="font-size:11px;color:var(--muted);min-width:50px;">${g.recipe}°C</span>
+      <input type="range" min="0" max="50" value="${g.defN}" id="sim_${g.key}" oninput="updateSim()">
+      <span class="range-val" id="simv_${g.key}">${g.defN}</span>
+      <span style="font-size:11px;color:var(--muted);">slabs</span>
+    </div>`).join('');
+}
+
+function updateSim() {
+  SIM_GRADES.forEach(g => {
+    const v = parseInt(document.getElementById('sim_'+g.key).value);
+    document.getElementById('simv_'+g.key).textContent = v;
+    g.n = v;
+  });
+  const active = SIM_GRADES.filter(g=>g.n>0);
+  if(active.length === 0) return;
+  const m = computeModels(active);
+  
+  // Results
+  const res = document.getElementById('sim-results');
+  const saving2 = Math.round((m.m1-m.m2)*53.4);
+  const saving3 = Math.round((m.m1-m.m3)*53.4);
+  res.innerHTML = `
+    <div class="result-box rb-current">
+      <div class="rb-label">Recipe Max</div>
+      <div class="rb-val">${fmtT(m.m1)}</div>
+      <div class="rb-sub" style="color:var(--muted);">Spread: ${m.spread.toFixed(1)}°C</div>
+    </div>
+    <div class="result-box rb-m1">
+      <div class="rb-label">M1 Max Setpoint</div>
+      <div class="rb-val">${fmtT(m.m1)}</div>
+      <div class="rb-sub" style="color:var(--red);">Conservative</div>
+    </div>
+    <div class="result-box rb-m2">
+      <div class="rb-label">M2 Wtd Avg</div>
+      <div class="rb-val">${fmtT(m.m2)}</div>
+      <div class="rb-sub" style="color:var(--green);">−${(m.m1-m.m2).toFixed(1)}°C · ~${saving2} NM3/HR</div>
+    </div>
+    <div class="result-box rb-m3">
+      <div class="rb-label">M3 RT-Wtd</div>
+      <div class="rb-val">${fmtT(m.m3)}</div>
+      <div class="rb-sub" style="color:var(--teal);">−${(m.m1-m.m3).toFixed(1)}°C · ~${saving3} NM3/HR</div>
+    </div>`;
+
+  // Zone chart
+  const ctx = document.getElementById('simZoneChart');
+  const m1sp = zoneSetpoints(m.m1);
+  const m2sp = zoneSetpoints(m.m2);
+  const m3sp = zoneSetpoints(m.m3);
+  if(simZoneChart) simZoneChart.destroy();
+  simZoneChart = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels: ZONE_SHORT,
+      datasets:[
+        {label:`M1 Max (${fmtT(m.m1)})`,data:m1sp,borderColor:'#c0392b',backgroundColor:'rgba(192,57,43,0.06)',borderWidth:3,pointRadius:5,tension:.3},
+        {label:`M2 WtAvg (${fmtT(m.m2)})`,data:m2sp,borderColor:'#1e8449',backgroundColor:'rgba(30,132,73,0.06)',borderWidth:3,pointRadius:5,tension:.3},
+        {label:`M3 RT-Wtd (${fmtT(m.m3)})`,data:m3sp,borderColor:'#0a7e8c',backgroundColor:'rgba(10,126,140,0.06)',borderWidth:2,pointRadius:4,tension:.3,borderDash:[5,4]},
+        {label:'Max Recipe',data:Array(8).fill(m.m1),borderColor:'rgba(192,57,43,0.35)',borderWidth:1.5,borderDash:[6,4],pointRadius:0},
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'top',labels:{font:{size:11}}}},
+      scales:{
+        y:{min:1200,max:1410,title:{display:true,text:'Zone Temperature (°C)',font:{size:11}}},
+        x:{title:{display:true,text:'Zone (Entry → Exit)',font:{size:11}}}
+      }
+    }
+  });
+
+  // Recommendation
+  let recModel, recText, recClass;
+  if(m.spread > 18) {
+    recModel='M1'; recClass='recommend-m1';
+    recText=`Spread is ${m.spread.toFixed(1)}°C (>18°C). High grade diversity creates underheating risk. Use M1 for zero-risk operation. Switch to M2 only after FCE history validates safety.`;
+  } else if(active.find(g=>g.recipe===1240)?.n > active.reduce((s,g)=>s+g.n,0)*0.3) {
+    recModel='M1'; recClass='recommend-m1';
+    recText=`High-recipe grades (1240°C) represent >30% of slabs. Weighted average is pulled toward max. M1 and M2 converge — use M1 for simplicity with minimal extra cost.`;
+  } else if(m.spread < 8) {
+    recModel='M2'; recClass='recommend-m2';
+    recText=`Low spread (${m.spread.toFixed(1)}°C). Grades are thermally similar. M2 safely reduces setpoint by ${(m.m1-m.m2).toFixed(1)}°C, saving ~${saving2} NM3/HR with negligible underheating risk.`;
+  } else {
+    recModel='M2'; recClass='recommend-m2';
+    recText=`Mixed load with moderate spread (${m.spread.toFixed(1)}°C). M2 with +5°C buffer handles most grades safely. Monitor FCE dropout for high-recipe grades and apply zone override if needed.`;
+  }
+
+  document.getElementById('sim-recommendation').innerHTML = `
+    <div class="rec-banner ${recClass}" style="margin-top:14px;">
+      <div class="rec-icon">${recModel==='M1'?'🛡️':'⚡'}</div>
+      <div class="rec-text">
+        <div class="rec-title">Simulator Recommendation: ${recModel}</div>
+        <div class="rec-reason">${recText}</div>
+      </div>
+    </div>`;
+}
+
+// ─────────────────────────────────────────────
+// ZONE PROFILE TAB
+// ─────────────────────────────────────────────
+let zoneProfileChart = null;
+
+function updateZoneProfile() {
+  const schedIdx = parseInt(document.getElementById('zone-sched-sel').value);
+  const modelSel = document.getElementById('zone-model-sel').value;
+  const s = SCHEDULES[schedIdx];
+  const m = computeModels(s.gradeData);
+  const m1sp = zoneSetpoints(m.m1);
+  const m2sp = zoneSetpoints(m.m2);
+  const m3sp = zoneSetpoints(m.m3);
+  const actualSp = zoneSetpoints(s.fce_actual - 5); // approx actual
+
+  const ctx = document.getElementById('zoneProfileChart');
+  if(zoneProfileChart) zoneProfileChart.destroy();
+
+  let datasets = [];
+  if(modelSel==='all'||modelSel==='m1') datasets.push({label:'M1 Max Setpoint',data:m1sp,borderColor:'#c0392b',borderWidth:3,pointRadius:5,pointBorderWidth:2,tension:.3});
+  if(modelSel==='all'||modelSel==='m2') datasets.push({label:'M2 WtAvg (+5°C)',data:m2sp,borderColor:'#1e8449',borderWidth:3,pointRadius:5,tension:.3});
+  if(modelSel==='all'||modelSel==='m3') datasets.push({label:'M3 RT-Wtd (+5°C)',data:m3sp,borderColor:'#0a7e8c',borderWidth:2.5,pointRadius:4,tension:.3,borderDash:[6,3]});
+  datasets.push({label:'Actual Avg FCE (slab)',data:Array(8).fill(s.fce_actual),borderColor:'#f5a623',borderWidth:2.5,borderDash:[8,5],pointRadius:0});
+  datasets.push({label:'Max Recipe Target',data:Array(8).fill(m.m1),borderColor:'rgba(192,57,43,0.5)',borderWidth:1.5,borderDash:[3,3],pointRadius:0});
+
+  zoneProfileChart = new Chart(ctx, {
+    type:'line',
+    data:{labels:ZONE_SHORT.map((z,i)=>`${z}\n(${ZONE_TYPES[i]})`),datasets},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{
+        legend:{position:'top',labels:{font:{size:11}}},
+        tooltip:{callbacks:{
+          afterBody:(items)=>{
+            const i=items[0].dataIndex;
+            return [`Zone type: ${ZONE_TYPES[i]}`,`Offset vs recipe: +${ZONE_OFFSETS[i].toFixed(0)}°C`];
+          }
+        }}
+      },
+      scales:{
+        y:{min:1190,max:1420,ticks:{stepSize:20},title:{display:true,text:'Temperature (°C)',font:{size:11}}},
+        x:{title:{display:true,text:'Furnace Zone (Entry → Discharge)',font:{size:11}}}
+      }
+    }
+  });
+
+  // Zone table
+  const tableHtml = `
+    <table class="slab-table" style="font-size:12px;">
+      <thead><tr>
+        <th>Zone</th><th>Type</th><th>Offset*</th><th>Current Actual</th><th>M1 Setpoint</th><th>M2 Setpoint</th><th>M3 Setpoint</th><th>vs FCE Dropout</th>
+      </tr></thead>
+      <tbody>
+        ${ZONE_SHORT.map((z,i)=>{
+          const actual = (s.fce_actual - 5) + ZONE_OFFSETS[i];
+          const m1z = m1sp[i], m2z = m2sp[i], m3z = m3sp[i];
+          const vsF = actual - s.fce_actual;
+          return `<tr>
+            <td style="font-weight:800;color:${ZONE_COLORS[i]};">${z}</td>
+            <td style="font-size:11px;color:var(--muted);">${ZONE_TYPES[i]}</td>
+            <td style="font-weight:700;color:var(--teal);">+${ZONE_OFFSETS[i].toFixed(0)}°C</td>
+            <td>${actual.toFixed(0)}°C</td>
+            <td style="color:var(--red);font-weight:700;">${m1z.toFixed(0)}°C</td>
+            <td style="color:var(--green);font-weight:700;">${m2z.toFixed(0)}°C</td>
+            <td style="color:var(--teal);font-weight:700;">${m3z.toFixed(0)}°C</td>
+            <td style="color:${vsF<-2?'var(--orange)':vsF>5?'var(--green)':'var(--teal)'};font-weight:700;">${vsF>=0?'+':''}${vsF.toFixed(0)}°C</td>
+          </tr>`;
+        }).join('')}
+        <tr style="background:#f0f7ff;font-weight:700;">
+          <td colspan="3">FCE Dropout (slab exit temp)</td>
+          <td colspan="5" style="color:var(--amber);font-size:14px;">${fmtT(s.fce_actual)} average | Min: ${fmtT(s.fce_min)}</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="note" style="margin-top:8px;">*Offset = average zone temp above recipe target (from Hazira Nov–Jan data). Z8 (equalising) shows lowest offset — normal and physically correct.</div>`;
+  document.getElementById('zone-table-container').innerHTML = tableHtml;
+}
+
+// ─────────────────────────────────────────────
+// PHYSICS HEAT CELLS
+// ─────────────────────────────────────────────
+function renderPhysicsHeat() {
+  const baseSP = 1230;
+  const el = document.getElementById('physics-heat-cells');
+  if(!el) return;
+  const temps = ZONE_OFFSETS.map(o=>baseSP+o);
+  const max=Math.max(...temps), min=Math.min(...temps);
+  el.innerHTML = temps.map((t,i)=>{
+    const intensity = (t-min)/(max-min);
+    const r=Math.round(10+intensity*180), g=Math.round(40+intensity*40), b=Math.round(180-intensity*180);
+    return `<div class="zone-heat-cell" style="background:rgb(${r},${g},${b});">
+      <div class="zh-label">${ZONE_SHORT[i]}</div>
+      <div class="zh-val">${t.toFixed(0)}°C</div>
+      <div class="zh-off">+${ZONE_OFFSETS[i].toFixed(0)}°C</div>
+    </div>`;
+  }).join('');
+}
+
+// ─────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────
+renderScheduleGrid();
+renderSchedDetail();
+renderSimControls();
+updateSim();
+SIM_GRADES.forEach(g=>g.n=g.defN); // reset
+
+</script>
+</body>
+</html>
